@@ -21,12 +21,79 @@ function extractEntitiesRegex(text: string) {
   };
 }
 
+// CORS headers helper
+function getCorsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
+  };
+}
+
+// API Key validation middleware
+function validateApiKey(req: Request): boolean {
+  const apiKey = req.headers.get("x-api-key");
+  const validApiKey = process.env.API_KEY;
+
+  if (!validApiKey) {
+    console.error("[Honeypot] API_KEY environment variable not set");
+    return false;
+  }
+
+  return apiKey === validApiKey;
+}
+
+// OPTIONS handler for CORS preflight
+export async function OPTIONS(req: Request) {
+  return NextResponse.json({}, {
+    status: 200,
+    headers: getCorsHeaders()
+  });
+}
+
+// GET handler
+export async function GET(req: Request) {
+  // Validate API key
+  if (!validateApiKey(req)) {
+    return NextResponse.json(
+      { status: "error", message: "Unauthorized - Invalid or missing API key" },
+      {
+        status: 401,
+        headers: getCorsHeaders()
+      }
+    );
+  }
+
+  // Return success response for GET requests
+  return NextResponse.json(
+    {
+      status: "success",
+      message: "Honeypot API is running",
+      endpoints: {
+        POST: "/api/honeypot - Send scam messages for detection",
+        GET: "/api/honeypot - Check API status"
+      },
+      version: "1.0.0"
+    },
+    {
+      status: 200,
+      headers: getCorsHeaders()
+    }
+  );
+}
+
+// POST handler
 export async function POST(req: Request) {
   try {
-    // 1. Authentication Check
-    const apiKeyHeader = req.headers.get("x-api-key");
-    if (apiKeyHeader !== process.env.HACKATHON_API_KEY) {
-      return NextResponse.json({ status: "error", message: "Unauthorized" }, { status: 401 });
+    // 1. API Key Authentication
+    if (!validateApiKey(req)) {
+      return NextResponse.json(
+        { status: "error", message: "Unauthorized - Invalid or missing API key" },
+        {
+          status: 401,
+          headers: getCorsHeaders()
+        }
+      );
     }
 
     // 2. Parse Request
@@ -34,7 +101,13 @@ export async function POST(req: Request) {
     const { sessionId, message, conversationHistory = [], metadata = {} } = body;
 
     if (!message || !message.text) {
-      return NextResponse.json({ status: "error", message: "Missing message text" }, { status: 400 });
+      return NextResponse.json(
+        { status: "error", message: "Missing message text" },
+        {
+          status: 400,
+          headers: getCorsHeaders()
+        }
+      );
     }
 
     const incomingText = message.text;
@@ -45,16 +118,16 @@ export async function POST(req: Request) {
       user_id: sessionId,
       filters: { user_id: sessionId }
     })) as { results?: any[] } | any[];
-    
+
     const memories = Array.isArray(memoriesData) ? memoriesData : (memoriesData.results || []);
     const memoryContext = memories
       .map((m: any) => typeof m === 'string' ? m : (m.memory || JSON.stringify(m)))
       .join("\n");
 
     // Default persona (Rakesh Sharma)
-    const selectedPersona = PERSONAS[1] || PERSONAS[0]; 
+    const selectedPersona = PERSONAS[1] || PERSONAS[0];
 
-    // 4. AIS-powered Scam Detection and Engagement
+    // 4. AI-powered Scam Detection and Engagement
     const systemPrompt = `
 You are an autonomous scam-honeypot AI adopting the persona of **Rakesh Sharma** (Age 46) from Indore.
 
@@ -97,7 +170,7 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
     });
 
     const result = JSON.parse(completion.choices[0].message.content || "{}");
-    
+
     // Supplement with Regex extraction
     const regexExtracted = extractEntitiesRegex(incomingText + " " + result.reply);
     const finalExtracted = {
@@ -112,9 +185,9 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
     if (result.is_scam) {
       await mem0.add([
         { role: "user", content: incomingText },
-        { 
-          role: "assistant", 
-          content: `Intelligence: ${JSON.stringify(finalExtracted)}. Finished: ${result.is_finished}. Notes: ${result.agentNotes}` 
+        {
+          role: "assistant",
+          content: `Intelligence: ${JSON.stringify(finalExtracted)}. Finished: ${result.is_finished}. Notes: ${result.agentNotes}`
         }
       ], { user_id: sessionId, metadata: { type: "scam_engagement", turnCount: conversationHistory.length + 1 } });
     }
@@ -130,7 +203,7 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
       };
 
       console.log(`[Honeypot] Triggering Callback for ${sessionId}`);
-      
+
       // Fire-and-forget callback to avoid blocking response
       fetch(process.env.GUVI_CALLBACK_URL || "https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
         method: "POST",
@@ -140,13 +213,25 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
     }
 
     // 7. Return Response (Hackathon Format)
-    return NextResponse.json({
-      status: "success",
-      reply: result.reply || "I am sorry, I didn't understand that."
-    });
+    return NextResponse.json(
+      {
+        status: "success",
+        reply: result.reply || "I am sorry, I didn't understand that."
+      },
+      {
+        status: 200,
+        headers: getCorsHeaders()
+      }
+    );
 
   } catch (error: any) {
     console.error("[Honeypot] Error:", error);
-    return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: error.message },
+      {
+        status: 500,
+        headers: getCorsHeaders()
+      }
+    );
   }
 }
