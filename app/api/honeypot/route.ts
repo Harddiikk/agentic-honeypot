@@ -53,115 +53,93 @@ export async function OPTIONS(req: Request) {
 
 // GET handler
 export async function GET(req: Request) {
-  // Validate API key
   if (!validateApiKey(req)) {
     return NextResponse.json(
-      { status: "error", message: "Unauthorized - Invalid or missing API key" },
-      {
-        status: 401,
-        headers: getCorsHeaders()
-      }
+      { status: "error", message: "Unauthorized" },
+      { status: 401, headers: getCorsHeaders() }
     );
   }
-
-  // Return success response for GET requests
   return NextResponse.json(
     {
       status: "success",
-      message: "Honeypot API is running",
-      endpoints: {
-        POST: "/api/honeypot - Send scam messages for detection",
-        GET: "/api/honeypot - Check API status"
-      },
+      message: "Agentic Honeypot API is running",
       version: "1.0.0"
     },
-    {
-      status: 200,
-      headers: getCorsHeaders()
-    }
+    { status: 200, headers: getCorsHeaders() }
   );
 }
 
-// POST handler
+// POST handler - STRICT IMPLEMENTATION
 export async function POST(req: Request) {
   try {
     // 1. API Key Authentication
     if (!validateApiKey(req)) {
       return NextResponse.json(
         { status: "error", message: "Unauthorized - Invalid or missing API key" },
-        {
-          status: 401,
-          headers: getCorsHeaders()
-        }
+        { status: 401, headers: getCorsHeaders() }
       );
     }
 
-    // 2. Parse Request
+    // 2. Strict Input Parsing
     const body = await req.json();
     const { sessionId, message, conversationHistory = [], metadata = {} } = body;
 
-    if (!message || !message.text) {
+    if (!sessionId || !message || !message.text) {
       return NextResponse.json(
-        { status: "error", message: "Missing message text" },
-        {
-          status: 400,
-          headers: getCorsHeaders()
-        }
+        { status: "error", message: "Invalid input format. Required: sessionId, message.text" },
+        { status: 400, headers: getCorsHeaders() }
       );
     }
 
     const incomingText = message.text;
-    const sender = message.sender;
+    const currentTurnCount = (conversationHistory?.length || 0) + 1;
 
-    // 3. Search Mem0 for session context
-    const memoriesData = (await mem0.search("scam intelligence", {
+    // 3. Context Retrieval (Mem0)
+    // Using sessionId as user_id for isolation
+    const memoriesData = (await mem0.search("scam context", {
       user_id: sessionId,
       filters: { user_id: sessionId }
     })) as { results?: any[] } | any[];
 
     const memories = Array.isArray(memoriesData) ? memoriesData : (memoriesData.results || []);
-    const memoryContext = memories
+    const relevantContext = memories
       .map((m: any) => typeof m === 'string' ? m : (m.memory || JSON.stringify(m)))
       .join("\n");
 
-    // Default persona (Rakesh Sharma)
-    const selectedPersona = PERSONAS[1] || PERSONAS[0];
-
-    // 4. AI-powered Scam Detection and Engagement
+    // 4. AI Logic (Scam Detection & Engagement)
     const systemPrompt = `
-You are an autonomous scam-honeypot AI adopting the persona of **Rakesh Sharma** (Age 46) from Indore.
+You are an autonomous scam-honeypot AI agent.
+**Persona**: Rakesh Sharma (46, Male), Shop Owner from Indore.
+**Personality**: Polite, slightly anxious about finances, respects authority, not tech-savvy.
+**Bait Info**: SBI A/C: 502134789012, IFSC: SBIN0004578, UPI: rakesh.sharma46@oksbi.
 
-### YOUR IDENTITY:
-- **Occupation**: Small electronics shop owner.
-- **Traits**: Polite, slightly anxious, trusts authority, uses simple language.
-- **Banking Info (Bait)**: SBI Palasia (A/C: 502134789012, IFSC: SBIN0004578, UPI: rakesh.sharma46@oksbi).
+**OBJECTIVE**:
+1. Check if the incoming message is a SCAM.
+2. If SCAM: Engage to extract entities (Bank A/C, UPI, Links, Phones). Keep them talking.
+3. If NOT SCAM: Reply normally.
+4. **Conclusion**: If you have CONFIRMED it is a scam AND (you have extracted 2+ entities OR conversation > 5 turns), set "is_finished": true.
 
-### GOAL:
-1. Detect if the message is a SCAM.
-2. If it is a scam, engage the sender to extract: bank accounts, UPI IDs, links, phone numbers, and suspicious keywords.
-3. If not a scam, respond naturally in persona.
-4. **Engagement Lifecycle**: After 3-5 turns of engagement OR if you've extracted significant intelligence, set "is_finished" to true.
-
-### OUTPUT FORMAT (STRICT JSON ONLY):
+**STRICT JSON OUTPUT**:
 {
   "is_scam": boolean,
-  "justification": "Why you think it is a scam (short string)",
-  "reply": "Your response as Rakesh",
+  "reply": "Your response string",
   "extracted_intelligence": {
-    "bankAccounts": ["list of strings"],
-    "upiIds": ["list of strings"],
-    "phishingLinks": ["list of strings"],
-    "phoneNumbers": ["list of strings"]
+    "bankAccounts": [],
+    "upiIds": [],
+    "phishingLinks": [],
+    "phoneNumbers": [],
+    "suspiciousKeywords": []
   },
-  "detected_tactic": "Urgency|Fear|Greed|Authority|None",
-  "safeguard_tip": "One short tip for users against this tactic",
   "is_finished": boolean,
-  "agentNotes": "Summary of behavioral patterns"
+  "agentNotes": "Brief summary",
+  "detected_tactic": "Urgency|Fear|Greed|Authority|None", 
+  "safeguard_tip": "Tip for users" 
 }
 
-Current Message: "${incomingText}"
-Channel: ${metadata.channel || "Unknown"}
-History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
+INPUT:
+Message: "${incomingText}"
+History Summary: ${relevantContext.slice(0, 300)}
+Metadata: ${JSON.stringify(metadata)}
 `;
 
     const completion = await openai.chat.completions.create({
@@ -170,74 +148,75 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
       response_format: { type: "json_object" }
     });
 
-    const result = JSON.parse(completion.choices[0].message.content || "{}");
+    const aiResult = JSON.parse(completion.choices[0].message.content || "{}");
 
-    // Supplement with Regex extraction
-    const regexExtracted = extractEntitiesRegex(incomingText + " " + result.reply);
-    const finalExtracted = {
-      bank_accounts: Array.from(new Set([...(result.extracted_intelligence?.bankAccounts || []), ...regexExtracted.bankAccounts])),
-      upi_ids: Array.from(new Set([...(result.extracted_intelligence?.upiIds || []), ...regexExtracted.upiIds])),
-      urls: Array.from(new Set([...(result.extracted_intelligence?.phishingLinks || []), ...regexExtracted.phishingLinks])),
-      ifsc_codes: [], // Extracted if possible, regex doesn't support specific ifsc yet
-      phone_numbers: Array.from(new Set([...(result.extracted_intelligence?.phoneNumbers || []), ...regexExtracted.phoneNumbers])),
+    // 5. Intelligence Aggregation (AI + Regex)
+    const regexExtracted = extractEntitiesRegex(incomingText + " " + aiResult.reply);
+    const finalIntelligence = {
+      bankAccounts: Array.from(new Set([...(aiResult.extracted_intelligence?.bankAccounts || []), ...regexExtracted.bankAccounts])),
+      upiIds: Array.from(new Set([...(aiResult.extracted_intelligence?.upiIds || []), ...regexExtracted.upiIds])),
+      phishingLinks: Array.from(new Set([...(aiResult.extracted_intelligence?.phishingLinks || []), ...regexExtracted.phishingLinks])),
+      phoneNumbers: Array.from(new Set([...(aiResult.extracted_intelligence?.phoneNumbers || []), ...regexExtracted.phoneNumbers])),
+      suspiciousKeywords: aiResult.extracted_intelligence?.suspiciousKeywords || []
     };
 
-    // 5. Update Mem0 with Intelligence and Metadata
-    if (result.is_scam) {
+    // 6. Persistence (Mem0)
+    if (aiResult.is_scam) {
       await mem0.add([
         { role: "user", content: incomingText },
-        {
-          role: "assistant",
-          content: `Intelligence: ${JSON.stringify(finalExtracted)}. Finished: ${result.is_finished}. Notes: ${result.agentNotes}`
-        }
-      ], { user_id: sessionId, metadata: { type: "scam_engagement", turnCount: conversationHistory.length + 1 } });
+        { role: "assistant", content: `Reply: ${aiResult.reply}. Intelligence: ${JSON.stringify(finalIntelligence)}` }
+      ], { user_id: sessionId, metadata: { type: "engagement", turn: currentTurnCount } });
     }
 
-    // 6. Callback Check (Mandatory Result Callback)
-    if (result.is_scam && result.is_finished) {
+    // 7. MANDATORY CALLBACK (If finished)
+    if (aiResult.is_scam && aiResult.is_finished) {
       const callbackPayload = {
         sessionId: sessionId,
         scamDetected: true,
-        totalMessagesExchanged: conversationHistory.length + 1,
-        extractedIntelligence: finalExtracted,
-        agentNotes: result.agentNotes || "Automatic detection and engagement complete."
+        totalMessagesExchanged: currentTurnCount,
+        extractedIntelligence: finalIntelligence,
+        agentNotes: aiResult.agentNotes || "Scam detected and engagement completed."
       };
 
       console.log(`[Honeypot] Triggering Callback for ${sessionId}`);
 
-      // Fire-and-forget callback to avoid blocking response
+      // Fire-and-forget
       fetch(process.env.GUVI_CALLBACK_URL || "https://hackathon.guvi.in/api/updateHoneyPotFinalResult", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(callbackPayload)
-      }).catch(err => console.error("[Honeypot] Callback Error:", err));
+      }).catch(err => console.error("[Callback Error]", err));
     }
 
-    // 7. Return Response (Hackathon Format + Frontend Extra Data)
+    // 8. Strict Response Format matches Problem Statement
+    // Also including extra fields for Frontend UI, but valid JSON is valid JSON.
     return NextResponse.json(
       {
         status: "success",
-        reply: result.reply || "I am sorry, I didn't understand that.",
-        scam_detected: result.is_scam,
-        reason: result.justification,
-        detected_tactic: result.detected_tactic,
-        safeguard_tip: result.safeguard_tip,
-        extracted_entities: finalExtracted
+        reply: aiResult.reply,
+        // Optional fields for our Frontend Dashboard (not part of problem spec but useful)
+        scam_detected: aiResult.is_scam,
+        reason: aiResult.agentNotes,
+        detected_tactic: aiResult.detected_tactic,
+        safeguard_tip: aiResult.safeguard_tip,
+        extracted_entities: {
+          // Map back to snake_case for frontend compatibility if needed, 
+          // OR update frontend to use camelCase. Let's keep snake_case for frontend for now.
+          bank_accounts: finalIntelligence.bankAccounts,
+          upi_ids: finalIntelligence.upiIds,
+          urls: finalIntelligence.phishingLinks,
+          ifsc_codes: [],
+          phone_numbers: finalIntelligence.phoneNumbers
+        }
       },
-      {
-        status: 200,
-        headers: getCorsHeaders()
-      }
+      { status: 200, headers: getCorsHeaders() }
     );
 
   } catch (error: any) {
     console.error("[Honeypot] Error:", error);
     return NextResponse.json(
       { status: "error", message: error.message },
-      {
-        status: 500,
-        headers: getCorsHeaders()
-      }
+      { status: 500, headers: getCorsHeaders() }
     );
   }
 }
