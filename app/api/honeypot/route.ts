@@ -142,18 +142,19 @@ You are an autonomous scam-honeypot AI adopting the persona of **Rakesh Sharma**
 3. If not a scam, respond naturally in persona.
 4. **Engagement Lifecycle**: After 3-5 turns of engagement OR if you've extracted significant intelligence, set "is_finished" to true.
 
-### OUTPUT FORMAT (STRICT JSON):
+### OUTPUT FORMAT (STRICT JSON ONLY):
 {
   "is_scam": boolean,
-  "justification": "Why you think it is a scam",
+  "justification": "Why you think it is a scam (short string)",
   "reply": "Your response as Rakesh",
   "extracted_intelligence": {
-    "bankAccounts": [],
-    "upiIds": [],
-    "phishingLinks": [],
-    "phoneNumbers": [],
-    "suspiciousKeywords": []
+    "bankAccounts": ["list of strings"],
+    "upiIds": ["list of strings"],
+    "phishingLinks": ["list of strings"],
+    "phoneNumbers": ["list of strings"]
   },
+  "detected_tactic": "Urgency|Fear|Greed|Authority|None",
+  "safeguard_tip": "One short tip for users against this tactic",
   "is_finished": boolean,
   "agentNotes": "Summary of behavioral patterns"
 }
@@ -174,11 +175,11 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
     // Supplement with Regex extraction
     const regexExtracted = extractEntitiesRegex(incomingText + " " + result.reply);
     const finalExtracted = {
-      bankAccounts: Array.from(new Set([...(result.extracted_intelligence?.bankAccounts || []), ...regexExtracted.bankAccounts])),
-      upiIds: Array.from(new Set([...(result.extracted_intelligence?.upiIds || []), ...regexExtracted.upiIds])),
-      phishingLinks: Array.from(new Set([...(result.extracted_intelligence?.phishingLinks || []), ...regexExtracted.phishingLinks])),
-      phoneNumbers: Array.from(new Set([...(result.extracted_intelligence?.phoneNumbers || []), ...regexExtracted.phoneNumbers])),
-      suspiciousKeywords: result.extracted_intelligence?.suspiciousKeywords || []
+      bank_accounts: Array.from(new Set([...(result.extracted_intelligence?.bankAccounts || []), ...regexExtracted.bankAccounts])),
+      upi_ids: Array.from(new Set([...(result.extracted_intelligence?.upiIds || []), ...regexExtracted.upiIds])),
+      urls: Array.from(new Set([...(result.extracted_intelligence?.phishingLinks || []), ...regexExtracted.phishingLinks])),
+      ifsc_codes: [], // Extracted if possible, regex doesn't support specific ifsc yet
+      phone_numbers: Array.from(new Set([...(result.extracted_intelligence?.phoneNumbers || []), ...regexExtracted.phoneNumbers])),
     };
 
     // 5. Update Mem0 with Intelligence and Metadata
@@ -212,11 +213,16 @@ History Summary: ${memoryContext.slice(0, 500) || "Start of conversation"}
       }).catch(err => console.error("[Honeypot] Callback Error:", err));
     }
 
-    // 7. Return Response (Hackathon Format)
+    // 7. Return Response (Hackathon Format + Frontend Extra Data)
     return NextResponse.json(
       {
         status: "success",
-        reply: result.reply || "I am sorry, I didn't understand that."
+        reply: result.reply || "I am sorry, I didn't understand that.",
+        scam_detected: result.is_scam,
+        reason: result.justification,
+        detected_tactic: result.detected_tactic,
+        safeguard_tip: result.safeguard_tip,
+        extracted_entities: finalExtracted
       },
       {
         status: 200,
