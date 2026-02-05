@@ -114,6 +114,11 @@ export default function HoneypotPage() {
 
       const data = await response.json();
 
+      if (response.status !== 200) {
+        setMessages((prev) => [...prev, { role: "victim", content: `System Error: ${data.message || "Connection failed"} (Status: ${response.status})` }]);
+        return;
+      }
+
       if (data.scam_detected) {
         setIsScamDetected(true);
         setScamReason(data.reason || "High risk patterns detected.");
@@ -122,18 +127,20 @@ export default function HoneypotPage() {
         setMessages((prev) => [...prev, { role: "victim", content: data.reply }]);
 
         // Update intelligence
-        setIntelligence((prev) => ({
-          upi_ids: Array.from(new Set([...prev.upi_ids, ...data.extracted_entities.upi_ids])),
-          urls: Array.from(new Set([...prev.urls, ...data.extracted_entities.urls])),
-          bank_accounts: Array.from(new Set([...prev.bank_accounts, ...data.extracted_entities.bank_accounts])),
-          ifsc_codes: Array.from(new Set([...prev.ifsc_codes, ...data.extracted_entities.ifsc_codes])),
-        }));
+        if (data.extracted_entities) {
+          setIntelligence((prev) => ({
+            upi_ids: Array.from(new Set([...prev.upi_ids, ...(data.extracted_entities.upi_ids || [])])),
+            urls: Array.from(new Set([...prev.urls, ...(data.extracted_entities.urls || [])])),
+            bank_accounts: Array.from(new Set([...prev.bank_accounts, ...(data.extracted_entities.bank_accounts || [])])),
+            ifsc_codes: Array.from(new Set([...prev.ifsc_codes, ...(data.extracted_entities.ifsc_codes || [])])),
+          }));
+        }
       } else {
         setIsScamDetected(false);
         setScamReason("");
         setDetectedTactic("");
         setSafeguardTip("");
-        setMessages((prev) => [...prev, { role: "victim", content: data.reply || "No scam detected." }]);
+        setMessages((prev) => [...prev, { role: "victim", content: data.reply || "I didn't understand that. Could you clarify?" }]);
       }
 
       if (data.suggested_attacker_replies) {
@@ -280,8 +287,8 @@ export default function HoneypotPage() {
                   key={p.id}
                   onClick={() => setSelectedPersonaId(p.id)}
                   className={`px-3 py-1.5 rounded-full text-[11px] font-semibold transition-all border ${selectedPersonaId === p.id
-                      ? "bg-indigo-600 text-white border-indigo-600 shadow-md scale-105"
-                      : "bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10"
+                    ? "bg-indigo-600 text-white border-indigo-600 shadow-md scale-105"
+                    : "bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/10"
                     }`}
                 >
                   {p.name}
@@ -312,8 +319,8 @@ export default function HoneypotPage() {
                             onClick={() => handleScammerPersonaChange(s.id)}
                             disabled={isAutoMode && messages.length > 0}
                             className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border flex flex-col items-center gap-1 w-32 ${selectedScammerPersonaId === s.id
-                                ? "bg-red-600 text-white border-red-600 shadow-lg shadow-red-200 dark:shadow-none"
-                                : "bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-red-400"
+                              ? "bg-red-600 text-white border-red-600 shadow-lg shadow-red-200 dark:shadow-none"
+                              : "bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700 hover:border-red-400"
                               } ${isAutoMode && messages.length > 0 ? "opacity-50 cursor-not-allowed" : ""}`}
                           >
                             <AlertTriangle className={`w-4 h-4 ${selectedScammerPersonaId === s.id ? "text-white" : "text-red-500"}`} />
@@ -338,8 +345,8 @@ export default function HoneypotPage() {
               {messages.map((m, i) => (
                 <div key={i} className={`flex ${m.role === "scammer" ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[80%] rounded-2xl px-5 py-3 shadow-md transition-all ${m.role === "scammer"
-                      ? "bg-slate-800 text-white rounded-tr-none"
-                      : "bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 border border-slate-100 dark:border-zinc-800 rounded-tl-none ring-1 ring-black/5"
+                    ? "bg-slate-800 text-white rounded-tr-none"
+                    : "bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 border border-slate-100 dark:border-zinc-800 rounded-tl-none ring-1 ring-black/5"
                     }`}>
                     <div className="text-[10px] mb-1 opacity-50 font-bold uppercase tracking-tighter">
                       {m.role === "scammer" ? "Scammer Agent" : `Victim (${currentPersona.name})`}
