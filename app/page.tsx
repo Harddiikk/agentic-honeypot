@@ -1,5 +1,5 @@
-import { Assistant } from "@/app/assistant"
+import HoneypotPage from "@/app/honeypot/page";
 
 export default function Page() {
-  return <Assistant />
+  return <HoneypotPage />
 }
