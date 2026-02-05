@@ -91,7 +91,10 @@ export default function HoneypotPage() {
     try {
       const response = await fetch("/api/honeypot", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.NEXT_PUBLIC_API_KEY || "",
+        },
         body: JSON.stringify({
           sessionId: conversationId,
           message: {
