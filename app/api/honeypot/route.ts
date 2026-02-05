@@ -3,6 +3,8 @@ import { MemoryClient } from "mem0ai";
 import { NextResponse } from "next/server";
 import { PERSONAS } from "@/lib/personas";
 
+export const dynamic = 'force-dynamic'; // Prevent static caching
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -21,12 +23,12 @@ function extractEntitiesRegex(text: string) {
   };
 }
 
-// CORS headers helper
+// CORS headers helper (Less restrictive)
 function getCorsHeaders() {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, x-api-key',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS, PUT, PATCH, DELETE',
+    'Access-Control-Allow-Headers': '*', // Allow any header the client sends
   };
 }
 
