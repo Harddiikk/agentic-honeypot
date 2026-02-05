@@ -36,11 +36,17 @@ function validateApiKey(req: Request): boolean {
   const validApiKey = process.env.API_KEY;
 
   if (!validApiKey) {
-    console.error("[Honeypot] API_KEY environment variable not set");
+    console.error(`[Honeypot Auth] API_KEY environment variable is MISSING or EMPTY.`);
     return false;
   }
 
-  return apiKey === validApiKey;
+  if (apiKey !== validApiKey) {
+    console.error(`[Honeypot Auth] Key Mismatch. Received: '${apiKey ? '***' + apiKey.slice(-4) : 'null'}', Expected: '***' + ${validApiKey.slice(-4)}`);
+    return false;
+  }
+
+  console.log(`[Honeypot Auth] Success.`);
+  return true;
 }
 
 // OPTIONS handler for CORS preflight
